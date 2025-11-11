@@ -78,9 +78,9 @@ public class SmsEncryptDecryptTest {
     // === main for demonstration ===
     public static void main(String[] args) throws Exception {
         // Example inputs - change them to test
-        String groupNumber = "UG-456-789";
+        String groupNumber = "YE-678-678";
         // String message = "Meeting ended for group LK-123-456 at 10:00AM";
-        String message = "Meeting ended for group UG-456-789 at 12:33PM";
+        String message = "Meeting ended for group YE-678-678 at 12:33PM";
 
 
         System.out.println("Original message: " + message);
