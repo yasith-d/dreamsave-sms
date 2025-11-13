@@ -8,7 +8,7 @@ public class SmsEncryptDecryptTest {
 
     private static final String HMAC_ALGORITHM = "HmacSHA256";
     private static final String AES_ALGORITHM = "AES/ECB/PKCS5Padding";
-    private static final String SHARED_SECRET = "4pR$Z9!nV@u2#tC7^hL6%yK1*fM3&eX5"; // same as GCP
+    private static final String SHARED_SECRET = ""; // same as GCP
 
     private static byte[] deriveAesKeyBytes(String sharedSecret, String groupNumber) throws Exception {
         Mac mac = Mac.getInstance(HMAC_ALGORITHM);
