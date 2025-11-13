@@ -33,9 +33,9 @@ public class SmsEncryptDecryptTest {
     }
 
     public static void main(String[] args) throws Exception {
-        String groupNumber = "LK-678-678";
+        String groupNumber = "MA-234-567";
         String meetingId = "MEET-001";
-        String endedAtIso = "2025-11-07T12:33:00Z";
+        String endedAtIso = "2025-11-14T12:33:00Z";
 
         String sms = encryptMessageForSms(groupNumber, meetingId, endedAtIso);
         System.out.println("Final SMS content:");

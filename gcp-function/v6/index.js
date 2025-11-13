@@ -5,7 +5,7 @@ const { Pool } = require("pg");
 const SHARED_SECRET = process.env.SHARED_SECRET;
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
-// DB connection
+// --- DB connection ---
 const pool = new Pool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
@@ -16,26 +16,16 @@ const pool = new Pool({
 });
 
 function deriveAesKey(sharedSecret, groupNumber) {
-    // Create HMAC object
     const hmac = crypto.createHmac("sha256", sharedSecret);
-    // Hash-in the group number to the HMAC object
     hmac.update(groupNumber);
-    // Produce 32-byte hash
     return hmac.digest();
 }
 
 function decryptAesEcb(base64CipherText, keyBytes) {
-    // Create decryptor for AES-256 in ECB mode
     const decipher = crypto.createDecipheriv("aes-256-ecb", keyBytes, null);
-    // Ensure decryption autmatically removes PKCS#7 padding added during encryption
     decipher.setAutoPadding(true);
-    // Converts sms into raw binary
     const encrypted = Buffer.from(base64CipherText, "base64");
-    /* Decrypt main part of message
-       Finalize decryption
-       Combine both decrypted parts into final plaintext */
     const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-    // Make decrypted bytes readable
     return decrypted.toString("utf8");
 }
 
@@ -54,36 +44,40 @@ function parseSms(smsContent) {
 }
 
 async function saveMessageToDb({ groupId, meetingId, decrypted, encrypted, raw }) {
-    const client = await pool.connect();
-    try {
-        const payload = JSON.parse(decrypted);
-        const meetingEndedAt = payload.endedAt ? new Date(payload.endedAt) : null;
+  const client = await pool.connect();
+  try {
+    const payload = JSON.parse(decrypted);
+    const meetingEndedAt = payload.endedAt ? new Date(payload.endedAt) : null;
 
-        const query = `
-        INSERT INTO sms_meeting_log (
-            group_id, meeting_id, meeting_ended_at,
-            encrypted_payload, decrypted_message, raw_sms
-        )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (group_id, meeting_id)
-        DO UPDATE
-        SET meeting_ended_at = EXCLUDED.meeting_ended_at,
-            encrypted_payload = EXCLUDED.encrypted_payload,
-            decrypted_message = EXCLUDED.decrypted_message,
-            raw_sms = EXCLUDED.raw_sms,
-            updated_at = NOW();
-        `;
-        await client.query(query, [
-        groupId,
-        meetingId,
-        meetingEndedAt,
-        encrypted,
-        decrypted,
-        raw,
-        ]);
-    } finally {
-        client.release();
-    }
+    const query = `
+      INSERT INTO sms_meeting_log (
+          group_id, meeting_id, meeting_ended_at,
+          encrypted_payload, decrypted_message, raw_sms
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (group_id, meeting_id)
+      DO UPDATE
+      SET meeting_ended_at = EXCLUDED.meeting_ended_at,
+          encrypted_payload = EXCLUDED.encrypted_payload,
+          decrypted_message = EXCLUDED.decrypted_message,
+          raw_sms = EXCLUDED.raw_sms,
+          updated_at = NOW();
+    `;
+
+    await client.query(query, [
+      groupId,
+      meetingId,
+      meetingEndedAt,
+      encrypted,
+      decrypted,
+      raw,
+    ]);
+  } catch (err) {
+    console.error("❌ DB write failed for", groupId, meetingId, err);
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // === Entry point ===
@@ -91,26 +85,29 @@ functions.http('decryptSMS', async (req, res) => {
     try {
         const providedSecret = req.body?.secret || req.headers["x-webhook-secret"];
         if (!providedSecret || providedSecret !== WEBHOOK_SECRET) {
-        console.warn("Unauthorized request");
-        return res.status(403).send("Forbidden");
+            console.warn("Unauthorized request");
+            return res.status(403).send("Forbidden");
         }
 
         const smsContent = req.body?.content || req.body?.message;
         if (!smsContent) return res.status(400).send("Missing 'content'");
 
         const parsed = parseSms(smsContent);
+
+        console.log("✅ Incoming request from Telerivet:");
         console.log("Decrypted SMS:", parsed);
 
         await saveMessageToDb(parsed);
 
         res.status(200).json({
-        status: "ok",
-        group: parsed.groupId,
-        meeting: parsed.meetingId,
-        decryptedMessage: parsed.decrypted,
+            status: "ok",
+            group: parsed.groupId,
+            meeting: parsed.meetingId,
+            decryptedMessage: parsed.decrypted,
         });
+
     } catch (err) {
-        console.error("Error:", err);
-        res.status(500).send("Decryption or DB write failed");
+        console.error("❌ Error in decryptSMS:", err);
+        res.status(500).send("Decryption failed or invalid format");
     }
 });
