@@ -15,73 +15,145 @@ const pool = new Pool({
     ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
 });
 
+// === Key derivation ===
 function deriveAesKey(sharedSecret, groupNumber) {
     const hmac = crypto.createHmac("sha256", sharedSecret);
     hmac.update(groupNumber);
     return hmac.digest();
 }
 
-function decryptAesEcb(base64CipherText, keyBytes) {
-    const decipher = crypto.createDecipheriv("aes-256-ecb", keyBytes, null);
-    decipher.setAutoPadding(true);
-    const encrypted = Buffer.from(base64CipherText, "base64");
-    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-    return decrypted.toString("utf8");
+// === Save failed decrypt attempts ===
+async function saveFailedDecryptToDb(data) {
+    const client = await pool.connect();
+    try {
+        const query = `
+            INSERT INTO sms_failed_decrypt_log (
+                from_number,
+                to_dsl_number,
+                encrypted_payload,
+                raw_sms,
+                error_reason
+            )
+            VALUES ($1, $2, $3, $4, $5);
+        `;
+
+        await client.query(query, [
+            data.fromNumber,
+            data.toDslNumber,
+            data.encrypted,
+            data.rawSms,
+            data.reason
+        ]);
+
+    } catch (err) {
+        console.error("Failed to save failed decrypt log:", err);
+    } finally {
+        client.release();
+    }
 }
 
+// === AES-GCM decrypt ===
+// base64Input = Base64( iv || ciphertext+tag )
+function decryptAesGcm(base64Input, keyBytes) {
+    const combined = Buffer.from(base64Input, "base64");
+    const ivSize = 12;
+
+    if (combined.length < ivSize + 16) {
+        return null;
+    }
+
+    const iv = combined.subarray(0, ivSize);
+    const cipherText = combined.subarray(ivSize);
+
+    try {
+        const decipher = crypto.createDecipheriv("aes-256-gcm", keyBytes, iv);
+        const tag = cipherText.subarray(cipherText.length - 16);
+        const actualCipher = cipherText.subarray(0, cipherText.length - 16);
+
+        decipher.setAuthTag(tag);
+
+        const decrypted = Buffer.concat([
+            decipher.update(actualCipher),
+            decipher.final()
+        ]);
+
+        return decrypted.toString("utf8");
+
+    } catch (err) {
+        console.error("AES-GCM auth/tag failure:", err.message);
+        return null;
+    }
+}
+
+// === Parse SMS ===
 function parseSms(smsContent) {
     const parts = smsContent.split(":");
     if (parts.length < 4) throw new Error("Invalid sms content format");
-    if (parts[0] !== "dreamstart") throw new Error("Invalid tag");
+
+    if (parts[0].toLowerCase() !== "dreamstart") {
+        throw new Error("Invalid tag");
+    }
 
     const groupId = parts[1];
     const meetingId = parts[2];
-    const base64 = parts.slice(3).join(":");
-    const keyBytes = deriveAesKey(SHARED_SECRET, groupId);
-    const decrypted = decryptAesEcb(base64, keyBytes);
+    const base64Cipher = parts.slice(3).join(":");
 
-    return { groupId, meetingId, decrypted, encrypted: base64, raw: smsContent };
+    const keyBytes = deriveAesKey(SHARED_SECRET, groupId);
+    const decrypted = decryptAesGcm(base64Cipher, keyBytes);
+
+    if (!decrypted) {
+        throw new Error("GCM decryption failed");
+    }
+
+    return {
+        groupId,
+        meetingId,
+        decrypted,
+        encrypted: base64Cipher,
+        raw: smsContent
+    };
 }
 
 async function saveMessageToDb({ groupId, meetingId, decrypted, encrypted, raw }) {
-  const client = await pool.connect();
-  try {
-    const payload = JSON.parse(decrypted);
-    const meetingEndedAt = payload.endedAt ? new Date(payload.endedAt) : null;
+    const client = await pool.connect();
+    try {
+        const payload = JSON.parse(decrypted);
+        const meetingEndedAt = payload.endedAt ? new Date(payload.endedAt) : null;
 
-    const query = `
-      INSERT INTO sms_meeting_log (
-          group_id, meeting_id, meeting_ended_at,
-          encrypted_payload, decrypted_message, raw_sms
-      )
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (group_id, meeting_id)
-      DO UPDATE
-      SET meeting_ended_at = EXCLUDED.meeting_ended_at,
-          encrypted_payload = EXCLUDED.encrypted_payload,
-          decrypted_message = EXCLUDED.decrypted_message,
-          raw_sms = EXCLUDED.raw_sms,
-          updated_at = NOW();
-    `;
+        const query = `
+          INSERT INTO sms_meeting_log (
+              group_id, meeting_id, meeting_ended_at,
+              encrypted_payload, decrypted_message, raw_sms
+          )
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (group_id, meeting_id)
+          DO UPDATE
+          SET meeting_ended_at = EXCLUDED.meeting_ended_at,
+              encrypted_payload = EXCLUDED.encrypted_payload,
+              decrypted_message = EXCLUDED.decrypted_message,
+              raw_sms = EXCLUDED.raw_sms,
+              updated_at = NOW();
+        `;
 
-    await client.query(query, [
-      groupId,
-      meetingId,
-      meetingEndedAt,
-      encrypted,
-      decrypted,
-      raw,
-    ]);
-  } catch (err) {
-    console.error("❌ DB write failed for", groupId, meetingId, err);
-    throw err;
-  } finally {
-    client.release();
-  }
+        await client.query(query, [
+            groupId,
+            meetingId,
+            meetingEndedAt,
+            encrypted,
+            decrypted,
+            raw
+        ]);
+    } finally {
+        client.release();
+    }
 }
 
 // === Entry point ===
 functions.http('decryptSMS', async (req, res) => {
+    const fromNumber = req.body?.from_number || req.body?.from || null;
+    const toDslNumber = req.body?.to_number || null;
+    const rawSms = req.body?.content || req.body?.message || null;
+
     try {
         const providedSecret = req.body?.secret || req.headers["x-webhook-secret"];
         if (!providedSecret || providedSecret !== WEBHOOK_SECRET) {
@@ -89,25 +161,40 @@ functions.http('decryptSMS', async (req, res) => {
             return res.status(403).send("Forbidden");
         }
 
-        const smsContent = req.body?.content || req.body?.message;
-        if (!smsContent) return res.status(400).send("Missing 'content'");
+        if (!rawSms) {
+            return res.status(400).send("Missing 'content'");
+        }
 
-        const parsed = parseSms(smsContent);
+        const parsed = parseSms(rawSms);
 
-        console.log("✅ Incoming request from Telerivet:");
-        console.log("Decrypted SMS:", parsed);
+        console.log("Valid Meeting-Ended SMS received:");
+        console.log(parsed);
 
         await saveMessageToDb(parsed);
 
-        res.status(200).json({
+        return res.status(200).json({
             status: "ok",
             group: parsed.groupId,
             meeting: parsed.meetingId,
-            decryptedMessage: parsed.decrypted,
+            decryptedMessage: parsed.decrypted
         });
 
     } catch (err) {
-        console.error("❌ Error in decryptSMS:", err);
-        res.status(500).send("Decryption failed or invalid format");
+        console.error("Error in decryptSMS:", err.message);
+
+        // Save suspicious/failed decrypt attempt
+        await saveFailedDecryptToDb({
+            fromNumber: fromNumber || "unknown",
+            toDslNumber: toDslNumber || "unknown",
+            encrypted: rawSms,
+            rawSms: rawSms,
+            reason: err.message || "Unknown error"
+        });
+
+        // Return 200 to avoid webhook retries, but indicate failure in body
+        return res.status(200).json({
+            status: "failed",
+            reason: err.message || "Decryption failed"
+        });
     }
 });
