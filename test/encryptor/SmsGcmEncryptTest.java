@@ -11,7 +11,7 @@ public class SmsGcmEncryptTest {
     private static final String AES_MODE = "AES/GCM/NoPadding";
     private static final String HMAC_ALGORITHM = "HmacSHA256";
 
-    private static final String SHARED_SECRET = "";
+    private static final String SHARED_SECRET = "4pR$Z9!nV@u2#tC7^hL6%yK1*fM3&eX5";
 
     // === Key derivation (same as frontend) ===
     private static byte[] deriveAesKeyBytes(String sharedSecret, String groupNumber) throws Exception {
@@ -48,15 +48,15 @@ public class SmsGcmEncryptTest {
 
     // === Full SMS builder ===
     public static String encryptMessageForSms(String groupNumber, String meetingTitle, String endedAtIso) throws Exception {
-        String jsonPayload = String.format("{\"endedAt\":\"%s\"}", endedAtIso);
+        String jsonPayload = String.format("{\"meeting_time\":\"%s\"}", endedAtIso);
         String encrypted = encryptGcm(jsonPayload, groupNumber);
         return "DreamStart:" + groupNumber + ":" + meetingTitle + ":" + encrypted;
     }
 
     public static void main(String[] args) throws Exception {
         // === Test data ===
-        String groupNumber = "LK-243-648";
-        String meetingTitle = "Meeting #3";
+        String groupNumber = "UG-123-456";
+        String meetingTitle = "Meeting #1";
         String endedAtIso = "2025-11-14T12:33:00Z";
 
         String sms = encryptMessageForSms(groupNumber, meetingTitle, endedAtIso);
