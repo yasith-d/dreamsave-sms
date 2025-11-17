@@ -1,6 +1,6 @@
 CREATE TABLE sms_meeting_log (
-    group_id           VARCHAR(64) NOT NULL,
-    meeting_id         VARCHAR(64) NOT NULL,
+    group_number       VARCHAR(64) NOT NULL,
+    meeting_number     VARCHAR(64) NOT NULL,
     meeting_ended_at   TIMESTAMP WITH TIME ZONE,
     encrypted_payload  TEXT NOT NULL,
     decrypted_message  TEXT NOT NULL,
