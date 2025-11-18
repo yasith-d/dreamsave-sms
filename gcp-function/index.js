@@ -120,44 +120,60 @@ function parseSms(smsContent) {
     };
 }
 
-
-
+// === Save to DB ===
 async function saveMessageToDb({ groupNumber, meetingNumber, decrypted, encrypted, raw, country }) {
     const client = await pool.connect();
     try {
         const payload = JSON.parse(decrypted);
-        const meetingEndedAt = payload.endedAt ? new Date(payload.endedAt) : null;
+
+        const meetingTime = payload.meeting_time
+            ? new Date(payload.meeting_time)
+            : null;
+
+        const cycleId = payload.cycle_id || null;
+        const version = payload.version || null;
 
         const query = `
-          INSERT INTO sms_meeting_log (
-              group_number, meeting_number, meeting_ended_at,
-              encrypted_payload, decrypted_message, raw_sms, country
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-          ON CONFLICT (group_number, meeting_number)
-          DO UPDATE
-          SET meeting_ended_at = EXCLUDED.meeting_ended_at,
-              encrypted_payload = EXCLUDED.encrypted_payload,
-              decrypted_message = EXCLUDED.decrypted_message,
-              raw_sms = EXCLUDED.raw_sms,
-              country = EXCLUDED.country,
-              updated_at = NOW();
+            INSERT INTO sms_meeting_log (
+                group_number,
+                meeting_number,
+                meeting_time,
+                cycle_id,
+                version,
+                encrypted_payload,
+                decrypted_message,
+                raw_sms,
+                country
+            )
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+            ON CONFLICT (group_number, meeting_number)
+            DO UPDATE SET
+                meeting_time       = EXCLUDED.meeting_time,
+                cycle_id           = EXCLUDED.cycle_id,
+                version            = EXCLUDED.version,
+                encrypted_payload  = EXCLUDED.encrypted_payload,
+                decrypted_message  = EXCLUDED.decrypted_message,
+                raw_sms            = EXCLUDED.raw_sms,
+                country            = EXCLUDED.country,
+                updated_at         = NOW();
         `;
 
         await client.query(query, [
             groupNumber,
             meetingNumber,
-            meetingEndedAt,
+            meetingTime,
+            cycleId,
+            version,
             encrypted,
             decrypted,
             raw,
             country
         ]);
+
     } finally {
         client.release();
     }
 }
-
 
 // === Entry point ===
 functions.http('decryptSMS', async (req, res) => {
