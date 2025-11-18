@@ -94,27 +94,35 @@ function parseSms(smsContent) {
         throw new Error("Invalid tag");
     }
 
-    const groupId = parts[1];
-    const meetingId = parts[2];
+    const groupNumber = parts[1];
+    const meetingNumber = parts[2];
     const base64Cipher = parts.slice(3).join(":");
 
-    const keyBytes = deriveAesKey(SHARED_SECRET, groupId);
+    const keyBytes = deriveAesKey(SHARED_SECRET, groupNumber);
     const decrypted = decryptAesGcm(base64Cipher, keyBytes);
 
     if (!decrypted) {
         throw new Error("GCM decryption failed");
     }
 
+    const payload = JSON.parse(decrypted);
+
+    if (payload.meeting_number !== meetingNumber) {
+        throw new Error("Tampered meeting number");
+    }
+
     return {
-        groupId,
-        meetingId,
+        groupNumber,
+        meetingNumber,
         decrypted,
         encrypted: base64Cipher,
         raw: smsContent
     };
 }
 
-async function saveMessageToDb({ groupId, meetingId, decrypted, encrypted, raw }) {
+
+
+async function saveMessageToDb({ groupNumber, meetingNumber, decrypted, encrypted, raw, country }) {
     const client = await pool.connect();
     try {
         const payload = JSON.parse(decrypted);
@@ -122,37 +130,41 @@ async function saveMessageToDb({ groupId, meetingId, decrypted, encrypted, raw }
 
         const query = `
           INSERT INTO sms_meeting_log (
-              group_id, meeting_id, meeting_ended_at,
-              encrypted_payload, decrypted_message, raw_sms
+              group_number, meeting_number, meeting_ended_at,
+              encrypted_payload, decrypted_message, raw_sms, country
           )
-          VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT (group_id, meeting_id)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          ON CONFLICT (group_number, meeting_number)
           DO UPDATE
           SET meeting_ended_at = EXCLUDED.meeting_ended_at,
               encrypted_payload = EXCLUDED.encrypted_payload,
               decrypted_message = EXCLUDED.decrypted_message,
               raw_sms = EXCLUDED.raw_sms,
+              country = EXCLUDED.country,
               updated_at = NOW();
         `;
 
         await client.query(query, [
-            groupId,
-            meetingId,
+            groupNumber,
+            meetingNumber,
             meetingEndedAt,
             encrypted,
             decrypted,
-            raw
+            raw,
+            country
         ]);
     } finally {
         client.release();
     }
 }
 
+
 // === Entry point ===
 functions.http('decryptSMS', async (req, res) => {
     const fromNumber = req.body?.from_number || req.body?.from || null;
     const toDslNumber = req.body?.to_number || null;
     const rawSms = req.body?.content || req.body?.message || null;
+    const country = req.body?.phone?.country || null;
 
     try {
         const providedSecret = req.body?.secret || req.headers["x-webhook-secret"];
@@ -170,19 +182,21 @@ functions.http('decryptSMS', async (req, res) => {
         console.log("Valid Meeting-Ended SMS received:");
         console.log(parsed);
 
-        await saveMessageToDb(parsed);
+        await saveMessageToDb({
+            ...parsed,
+            country
+        });
 
         return res.status(200).json({
             status: "ok",
-            group: parsed.groupId,
-            meeting: parsed.meetingId,
+            group: parsed.groupNumber,
+            meeting: parsed.meetingNumber,
             decryptedMessage: parsed.decrypted
         });
 
     } catch (err) {
         console.error("Error in decryptSMS:", err.message);
 
-        // Save suspicious/failed decrypt attempt
         await saveFailedDecryptToDb({
             fromNumber: fromNumber || "unknown",
             toDslNumber: toDslNumber || "unknown",
@@ -191,8 +205,7 @@ functions.http('decryptSMS', async (req, res) => {
             reason: err.message || "Unknown error"
         });
 
-        // Return 200 to avoid webhook retries, but indicate failure in body
-        return res.status(200).json({
+        return res.status(200).json({ // Sent as 200 because of multiple Telerivet retries for 500 error
             status: "failed",
             reason: err.message || "Decryption failed"
         });

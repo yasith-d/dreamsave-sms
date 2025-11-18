@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 
 // ***** SET THIS BEFORE USING *****
-const SHARED_SECRET = "";
+const SHARED_SECRET = "4pR$Z9!nV@u2#tC7^hL6%yK1*fM3&eX5";
 
 // === HMAC-based AES256 key derivation ===
 function deriveAesKey(sharedSecret, groupNumber) {
@@ -94,8 +94,8 @@ if (require.main === module) {
         const result = parseSms(input);
 
         console.log("SUCCESS — SMS parsed & decrypted:\n");
-        console.log("Group ID:", result.groupId);
-        console.log("Meeting ID:", result.meetingId);
+        console.log("Group Number:", result.groupId);
+        console.log("Meeting Number:", result.meetingId);
         console.log("\nDecrypted JSON:");
         console.log(result.decrypted);
 

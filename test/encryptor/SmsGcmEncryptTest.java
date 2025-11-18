@@ -47,19 +47,19 @@ public class SmsGcmEncryptTest {
     }
 
     // === Full SMS builder ===
-    public static String encryptMessageForSms(String groupNumber, String meetingTitle, String endedAtIso) throws Exception {
-        String jsonPayload = String.format("{\"meeting_time\":\"%s\"}", endedAtIso);
-        String encrypted = encryptGcm(jsonPayload, groupNumber);
-        return "DreamStart:" + groupNumber + ":" + meetingTitle + ":" + encrypted;
+    public static String encryptMessageForSms(String groupNumber, String meetingNumber, String endedAtIso) throws Exception {
+    String jsonPayload = String.format("{\"meeting_number\":\"%s\", \"meeting_time\":\"%s\"}", meetingNumber, endedAtIso);
+    String encrypted = encryptGcm(jsonPayload, groupNumber);
+        return "DreamStart:" + groupNumber + ":" + meetingNumber + ":" + encrypted;
     }
 
     public static void main(String[] args) throws Exception {
         // === Test data ===
         String groupNumber = "UG-123-456";
-        String meetingTitle = "Meeting #1";
+        String meetingNumber = "Meeting-#1";
         String endedAtIso = "2025-11-14T12:33:00Z";
 
-        String sms = encryptMessageForSms(groupNumber, meetingTitle, endedAtIso);
+        String sms = encryptMessageForSms(groupNumber, meetingNumber, endedAtIso);
 
         System.out.println("=== Final SMS Content ===");
         System.out.println(sms);
