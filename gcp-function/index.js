@@ -146,16 +146,8 @@ async function saveMessageToDb({ groupNumber, meetingNumber, decrypted, encrypte
                 country
             )
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-            ON CONFLICT (group_number, meeting_number)
-            DO UPDATE SET
-                meeting_time       = EXCLUDED.meeting_time,
-                cycle_id           = EXCLUDED.cycle_id,
-                version            = EXCLUDED.version,
-                encrypted_payload  = EXCLUDED.encrypted_payload,
-                decrypted_message  = EXCLUDED.decrypted_message,
-                raw_sms            = EXCLUDED.raw_sms,
-                country            = EXCLUDED.country,
-                updated_at         = NOW();
+            ON CONFLICT (group_number, cycle_id, meeting_number)
+            DO NOTHING;
         `;
 
         await client.query(query, [
