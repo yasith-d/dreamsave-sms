@@ -9,7 +9,6 @@ CREATE TABLE sms_meeting_log (
     raw_sms            TEXT NOT NULL,
     country            VARCHAR(8),
     created_at         TIMESTAMPTZ DEFAULT NOW(),
-    updated_at         TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (group_number, cycle_id, meeting_number)
 );
 
@@ -20,6 +19,5 @@ CREATE TABLE sms_failed_decrypt_log (
     encrypted_payload TEXT NOT NULL,
     raw_sms           TEXT NOT NULL,
     error_reason      TEXT NOT NULL,
-    created_at        TIMESTAMPTZ DEFAULT NOW(),
-    updated_at        TIMESTAMPTZ DEFAULT NOW()
+    created_at        TIMESTAMPTZ DEFAULT NOW()
 );
