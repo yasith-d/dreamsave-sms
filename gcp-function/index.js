@@ -53,7 +53,7 @@ async function saveFailedDecryptToDb(data) {
 }
 
 // === AES-GCM decrypt ===
-// base64Input = Base64( iv || ciphertext+tag )
+// base64Input = Base64( iv + ciphertext + tag )
 function decryptAesGcm(base64Input, keyBytes) {
     const combined = Buffer.from(base64Input, "base64");
     const ivSize = 12;
@@ -62,7 +62,9 @@ function decryptAesGcm(base64Input, keyBytes) {
         return null;
     }
 
+    // Extract the IV (first 12 bytes)
     const iv = combined.subarray(0, ivSize);
+    // Extract everything after the IV
     const cipherText = combined.subarray(ivSize);
 
     try {
@@ -101,19 +103,25 @@ function parseSms(smsContent) {
     const keyBytes = deriveAesKey(SHARED_SECRET, groupNumber);
     const decrypted = decryptAesGcm(base64Cipher, keyBytes);
 
-    if (!decrypted) {
-        throw new Error("GCM decryption failed");
-    }
+    if (!decrypted) throw new Error("GCM decryption failed");
 
     const payload = JSON.parse(decrypted);
 
-    if (payload.meeting_number !== meetingNumber) {
+    const meetingId = payload.id;
+    const payloadMeetingNumber = payload.n;
+
+    if (!meetingId) throw new Error("Missing meeting id");
+    if (!payloadMeetingNumber) throw new Error("Missing meeting number");
+
+    // Validate meeting number matches the SMS header
+    if (payloadMeetingNumber !== meetingNumber) {
         throw new Error("Tampered meeting number");
     }
 
     return {
         groupNumber,
         meetingNumber,
+        meetingId,
         decrypted,
         encrypted: base64Cipher,
         raw: smsContent
@@ -121,24 +129,20 @@ function parseSms(smsContent) {
 }
 
 // === Save to DB ===
-async function saveMessageToDb({ groupNumber, meetingNumber, decrypted, encrypted, raw, country }) {
+async function saveMessageToDb({ groupNumber, meetingNumber, meetingId, decrypted, encrypted, raw, country }) {
     const client = await pool.connect();
     try {
         const payload = JSON.parse(decrypted);
 
-        const meetingTime = payload.meeting_time
-            ? new Date(payload.meeting_time)
-            : null;
-
-        const cycleId = payload.cycle_id || null;
-        const version = payload.version || null;
+        const meetingTime = payload.t ? new Date(payload.t) : null;
+        const version = payload.v || null;     
 
         const query = `
             INSERT INTO sms_meeting_log (
+                meeting_id,
                 group_number,
                 meeting_number,
                 meeting_time,
-                cycle_id,
                 version,
                 encrypted_payload,
                 decrypted_message,
@@ -146,15 +150,14 @@ async function saveMessageToDb({ groupNumber, meetingNumber, decrypted, encrypte
                 country
             )
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-            ON CONFLICT (group_number, cycle_id, meeting_number)
-            DO NOTHING;
+            ON CONFLICT (meeting_id) DO NOTHING;
         `;
 
         await client.query(query, [
+            meetingId,
             groupNumber,
             meetingNumber,
             meetingTime,
-            cycleId,
             version,
             encrypted,
             decrypted,

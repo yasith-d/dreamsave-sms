@@ -5,15 +5,17 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.UUID;
 
 public class SmsGcmEncryptTest {
 
     private static final String AES_MODE = "AES/GCM/NoPadding";
     private static final String HMAC_ALGORITHM = "HmacSHA256";
 
+    // Use the same secret as the cloud function
     private static final String SHARED_SECRET = "4pR$Z9!nV@u2#tC7^hL6%yK1*fM3&eX5";
 
-    // === Key derivation (same as frontend) ===
+    // === Key derivation ===
     private static byte[] deriveAesKeyBytes(String sharedSecret, String groupNumber) throws Exception {
         Mac mac = Mac.getInstance(HMAC_ALGORITHM);
         SecretKeySpec keySpec = new SecretKeySpec(sharedSecret.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM);
@@ -28,10 +30,8 @@ public class SmsGcmEncryptTest {
 
         Cipher cipher = Cipher.getInstance(AES_MODE);
 
-        // 12-byte IV recommended for GCM
         byte[] iv = new byte[12];
-        SecureRandom random = new SecureRandom();
-        random.nextBytes(iv);
+        new SecureRandom().nextBytes(iv);
 
         GCMParameterSpec gcmSpec = new GCMParameterSpec(128, iv);
         cipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmSpec);
@@ -46,20 +46,29 @@ public class SmsGcmEncryptTest {
         return Base64.getEncoder().encodeToString(out);
     }
 
-    // === Full SMS builder ===
-    public static String encryptMessageForSms(String groupNumber, String meetingNumber, String endedAtIso) throws Exception {
-    String jsonPayload = String.format("{\"meeting_number\":\"%s\", \"meeting_time\":\"%s\"}", meetingNumber, endedAtIso);
-    String encrypted = encryptGcm(jsonPayload, groupNumber);
+    // === Build SMS according to new payload ===
+    public static String encryptMessageForSms(String groupNumber, String meetingNumber, long timestamp, String version) throws Exception {
+        String meetingId = UUID.randomUUID().toString(); // unique id for this meeting
+        String jsonPayload = String.format(
+                "{\"t\":%d,\"id\":\"%s\",\"n\":\"%s\",\"v\":\"%s\"}",
+                timestamp,
+                meetingId,
+                meetingNumber,
+                version
+        );
+
+        String encrypted = encryptGcm(jsonPayload, groupNumber);
         return "DreamStart:" + groupNumber + ":" + meetingNumber + ":" + encrypted;
     }
 
     public static void main(String[] args) throws Exception {
-        // === Test data ===
-        String groupNumber = "UG-123-456";
-        String meetingNumber = "Meeting-#1";
-        String endedAtIso = "2025-11-14T12:33:00Z";
+        // === Example usage ===
+        String groupNumber = "LK-903-184";
+        String meetingNumber = "M#9";
+        long timestamp = System.currentTimeMillis();
+        String version = "2.17.0-dev.beta";
 
-        String sms = encryptMessageForSms(groupNumber, meetingNumber, endedAtIso);
+        String sms = encryptMessageForSms(groupNumber, meetingNumber, timestamp, version);
 
         System.out.println("=== Final SMS Content ===");
         System.out.println(sms);

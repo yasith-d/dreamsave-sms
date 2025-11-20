@@ -1,6 +1,6 @@
 CREATE TABLE sms_meeting_log (
+    meeting_id         VARCHAR(64) PRIMARY KEY,
     group_number       VARCHAR(64) NOT NULL,
-    cycle_id           VARCHAR(128) NOT NULL,
     meeting_number     VARCHAR(64) NOT NULL,
     meeting_time       TIMESTAMPTZ,
     version            VARCHAR(64),
@@ -8,8 +8,7 @@ CREATE TABLE sms_meeting_log (
     decrypted_message  TEXT NOT NULL,
     raw_sms            TEXT NOT NULL,
     country            VARCHAR(8),
-    created_at         TIMESTAMPTZ DEFAULT NOW(),
-    PRIMARY KEY (group_number, cycle_id, meeting_number)
+    created_at         TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE sms_failed_decrypt_log (
