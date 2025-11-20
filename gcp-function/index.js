@@ -213,7 +213,7 @@ functions.http('decryptSMS', async (req, res) => {
             reason: err.message || "Unknown error"
         });
 
-        return res.status(200).json({ // Sent as 200 because of multiple Telerivet retries for 500 error
+        return res.status(400).json({
             status: "failed",
             reason: err.message || "Decryption failed"
         });
