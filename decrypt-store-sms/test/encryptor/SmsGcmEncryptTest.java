@@ -13,7 +13,7 @@ public class SmsGcmEncryptTest {
     private static final String HMAC_ALGORITHM = "HmacSHA256";
 
     // Use the same secret as the cloud function
-    private static final String SHARED_SECRET = "";
+    private static final String SHARED_SECRET = "4pR$Z9!nV@u2#tC7^hL6%yK1*fM3&eX5";
 
     // === Key derivation ===
     private static byte[] deriveAesKeyBytes(String sharedSecret, String groupNumber) throws Exception {
@@ -63,8 +63,8 @@ public class SmsGcmEncryptTest {
 
     public static void main(String[] args) throws Exception {
         // === Example usage ===
-        String groupNumber = "LK-903-184";
-        String meetingNumber = "M#9";
+        String groupNumber = "SS-903-184";
+        String meetingNumber = "M#4";
         long timestamp = System.currentTimeMillis();
         String version = "2.17.0-dev.beta";
 
