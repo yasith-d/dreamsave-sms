@@ -13,7 +13,7 @@ public class SmsGcmEncryptTest {
     private static final String HMAC_ALGORITHM = "HmacSHA256";
 
     // Use the same secret as the cloud function
-    private static final String SHARED_SECRET = "4pR$Z9!nV@u2#tC7^hL6%yK1*fM3&eX5";
+    private static final String SHARED_SECRET = "";
 
     // === Key derivation ===
     private static byte[] deriveAesKeyBytes(String sharedSecret, String groupNumber) throws Exception {
