@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 
 // ***** SET THIS BEFORE USING *****
-const SHARED_SECRET = "";
+const SHARED_SECRET = "4pR$Z9!nV@u2#tC7^hL6%yK1*fM3&eX5";
 
 // === HMAC-based AES256 key derivation ===
 function deriveAesKey(sharedSecret, groupNumber) {
