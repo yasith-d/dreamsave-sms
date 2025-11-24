@@ -222,3 +222,9 @@ functions.http('decryptSMS', async (req, res) => {
         });
     }
 });
+
+module.exports = {
+  deriveAesKey,
+  decryptAesGcm,
+  parseSms,
+};

@@ -1,33 +1,33 @@
-const crypto = require("crypto");
-const { deriveAesKey, parseSms } = require("../production/index");
+// parseSms.test.js
+process.env.SHARED_SECRET = "test-secret"; // MUST be BEFORE require
+const { parseSms, deriveAesKey, decryptAesGcm } = require('../production/index');
+const crypto = require('crypto');
 
-function encryptForTest(sharedSecret, group, payloadObj) {
-  const key = deriveAesKey(sharedSecret, group);
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+describe('parseSms', () => {
+  test('parses and decrypts a valid SMS', () => {
+    const groupNumber = 'GROUP1';
+    const meetingNumber = 'M#1';
+    const plaintextPayload = JSON.stringify({ id: '1234', n: meetingNumber, t: Date.now() });
 
-  const json = JSON.stringify(payloadObj);
-  let encrypted = Buffer.concat([cipher.update(json, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
+    const key = deriveAesKey(process.env.SHARED_SECRET, groupNumber);
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([cipher.update(Buffer.from(plaintextPayload, 'utf8')), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const combined = Buffer.concat([iv, encrypted, tag]);
+    const base64Cipher = combined.toString('base64');
 
-  return Buffer.concat([iv, encrypted, tag]).toString("base64");
-}
+    const smsContent = `DreamStart:${groupNumber}:${meetingNumber}:${base64Cipher}`;
+    const parsed = parseSms(smsContent);
 
-describe("parseSms", () => {
-  const SHARED_SECRET = process.env.SHARED_SECRET = "test-secret";
-
-  test("parses and decrypts a valid SMS", () => {
-    const enc = encryptForTest(SHARED_SECRET, "G100", { id: "M1", n: "5" });
-
-    const sms = `DreamStart:G100:5:${enc}`;
-    const parsed = parseSms(sms);
-
-    expect(parsed.groupNumber).toBe("G100");
-    expect(parsed.meetingNumber).toBe("5");
-    expect(parsed.meetingId).toBe("M1");
+    expect(parsed.groupNumber).toBe(groupNumber);
+    expect(parsed.meetingNumber).toBe(meetingNumber);
+    expect(parsed.meetingId).toBe('1234');
+    expect(parsed.decrypted).toBe(plaintextPayload);
   });
 
-  test("throws for invalid tag", () => {
-    expect(() => parseSms("Wrong:123:5:xyz")).toThrow("Invalid tag");
+  test('throws for invalid tag', () => {
+    const smsContent = 'WRONGTAG:GROUP1:M#1:abcdef';
+    expect(() => parseSms(smsContent)).toThrow('Invalid tag');
   });
 });
