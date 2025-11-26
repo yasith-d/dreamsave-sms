@@ -12,14 +12,14 @@ public class SmsEncryptor {
     private static final String AES_MODE = "AES/GCM/NoPadding";
     private static final String HMAC_ALGO = "HmacSHA256";
 
-    // MUST MATCH the Cloud Function's SHARED_SECRET
-    private static final String SHARED_SECRET = "4pR$Z9!nV@u2#tC7^hL6%yK1*fM3&eX5";
+    // MUST MATCH the Cloud Function's AUDIT_SMS_KEY
+    private static final String AUDIT_SMS_KEY = "4pR$Z9!nV@u2#tC7^hL6%yK1*fM3&eX5";
 
     // === Derive AES-256 key exactly like Node.js (HMAC-SHA256(secret)) ===
     private static byte[] deriveAesKey() throws Exception {
         Mac mac = Mac.getInstance(HMAC_ALGO);
         SecretKeySpec keySpec = new SecretKeySpec(
-                SHARED_SECRET.getBytes(StandardCharsets.UTF_8),
+                AUDIT_SMS_KEY.getBytes(StandardCharsets.UTF_8),
                 HMAC_ALGO
         );
         mac.init(keySpec);

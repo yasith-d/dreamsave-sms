@@ -2,7 +2,7 @@ const functions = require('@google-cloud/functions-framework');
 const crypto = require('crypto');
 const { Pool } = require('pg');
 
-const SHARED_SECRET = process.env.SHARED_SECRET;
+const AUDIT_SMS_KEY = process.env.AUDIT_SMS_KEY;
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
 const pool = new Pool({
@@ -14,8 +14,8 @@ const pool = new Pool({
   ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
 });
 
-function deriveAesKeyFromSharedSecret(sharedSecret) {
-  const hmac = crypto.createHmac('sha256', Buffer.from(sharedSecret, 'utf8'));
+function deriveAesKeyFromAuditSmsKey(auditSmsKey) {
+  const hmac = crypto.createHmac('sha256', Buffer.from(auditSmsKey, 'utf8'));
   return hmac.digest();
 }
 
@@ -57,7 +57,7 @@ async function saveFailedDecryptToDb(data) {
   finally { client.release(); }
 }
 
-function parseDsSms(rawSms, sharedSecret) {
+function parseDsSms(rawSms, auditSmsKey) {
   if (!rawSms) throw new Error("Empty SMS content");
   const idx = rawSms.indexOf(":");
   if (idx === -1) throw new Error("Invalid SMS format: missing ':'");
@@ -66,7 +66,7 @@ function parseDsSms(rawSms, sharedSecret) {
   const encryptedPart = rawSms.substring(idx + 1).trim();
   if (!encryptedPart) throw new Error("Empty DS encrypted payload");
 
-  const keyBytes = deriveAesKeyFromSharedSecret(sharedSecret);
+  const keyBytes = deriveAesKeyFromAuditSmsKey(auditSmsKey);
   const decrypted = decryptAesGcm(encryptedPart, keyBytes);
   if (!decrypted) throw new Error("Decryption failed: invalid encrypted payload");
 
@@ -114,17 +114,8 @@ async function saveMessageToDb({ groupId, meetingId, meetingTime, version, encry
   const client = await pool.connect();
   try {
     const query = `
-      INSERT INTO sms_meeting_log (
-        meeting_id,
-        group_id,
-        meeting_time,
-        version,
-        encrypted_payload,
-        decrypted_message,
-        raw_sms,
-        country,
-        from_number,
-        to_dsl_number
+      INSERT INTO sms_meeting_log (meeting_id, group_id, meeting_time, version, encrypted_payload,
+        decrypted_message, raw_sms, country, from_number, to_dsl_number
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
       ON CONFLICT (meeting_id) DO NOTHING;
     `;
@@ -143,6 +134,7 @@ async function saveMessageToDb({ groupId, meetingId, meetingTime, version, encry
   } finally { client.release(); }
 }
 
+// === Entry point ===
 functions.http('decryptSMS', async (req, res) => {
   const fromNumber = req.body?.from_number || req.body?.from || "unknown";
   const toDslNumber = req.body?.to_number || "unknown";
@@ -155,7 +147,7 @@ functions.http('decryptSMS', async (req, res) => {
 
     if (!rawSms) return res.status(400).send("Missing 'content'");
 
-    const parsed = parseDsSms(rawSms, SHARED_SECRET);
+    const parsed = parseDsSms(rawSms, AUDIT_SMS_KEY);
 
     await saveMessageToDb({
       groupId: parsed.groupId,
@@ -184,7 +176,9 @@ functions.http('decryptSMS', async (req, res) => {
       reason: err.message || "unknown"
     });
 
-    return res.status(400).json({
+    // Telerivet will repeatedly call the webhook until 200 received
+    // Therefore responding with any other code will cause duplicate failed decryption entries to be formed in DB
+    return res.status(200).json({
       status: 'failed',
       reason: err.message || 'Decryption failed'
     });
@@ -192,7 +186,7 @@ functions.http('decryptSMS', async (req, res) => {
 });
 
 module.exports = {
-  deriveAesKeyFromSharedSecret,
+  deriveAesKeyFromAuditSmsKey,
   decryptAesGcm,
   parseDsSms
 };

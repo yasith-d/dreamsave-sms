@@ -1,11 +1,11 @@
 const crypto = require("crypto");
 
 // ***** SET THIS BEFORE USING *****
-const SHARED_SECRET = "4pR$Z9!nV@u2#tC7^hL6%yK1*fM3&eX5";
+const AUDIT_SMS_KEY = "4pR$Z9!nV@u2#tC7^hL6%yK1*fM3&eX5";
 
 // === Key derivation (match frontend/cloud function) ===
-function deriveAesKeyFromSharedSecret(sharedSecret) {
-    const hmac = crypto.createHmac("sha256", Buffer.from(sharedSecret, "utf8"));
+function deriveAesKeyFromAuditSmsKey(auditSmsKey) {
+    const hmac = crypto.createHmac("sha256", Buffer.from(auditSmsKey, "utf8"));
     return hmac.digest(); // 32 bytes AES-256 key
 }
 
@@ -57,7 +57,7 @@ function parseDslSms(rawSms) {
     const encryptedPart = rawSms.substring(idx + 1).trim();
     if (!encryptedPart) throw new Error("Empty DS encrypted payload");
 
-    const keyBytes = deriveAesKeyFromSharedSecret(SHARED_SECRET);
+    const keyBytes = deriveAesKeyFromAuditSmsKey(AUDIT_SMS_KEY);
     const decrypted = decryptAesGcm(encryptedPart, keyBytes);
 
     if (!decrypted) throw new Error("GCM decryption failed");
@@ -105,7 +105,7 @@ if (require.main === module) {
 }
 
 module.exports = {
-    deriveAesKeyFromSharedSecret,
+    deriveAesKeyFromAuditSmsKey,
     decryptAesGcm,
     parseDslSms
 };
