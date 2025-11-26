@@ -178,7 +178,7 @@ functions.http('decryptSMS', async (req, res) => {
 
     // Telerivet will repeatedly call the webhook until 200 received
     // Therefore responding with any other code will cause duplicate failed decryption entries to be formed in DB
-    return res.status(200).json({
+    return res.status(201).json({
       status: 'failed',
       reason: err.message || 'Decryption failed'
     });
