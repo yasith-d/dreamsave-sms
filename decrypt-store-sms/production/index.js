@@ -44,13 +44,12 @@ async function saveFailedDecryptToDb(data) {
   try {
     const query = `
       INSERT INTO sms_failed_decrypt_log (
-        from_number, to_dsl_number, encrypted_payload, raw_sms, error_reason
-      ) VALUES ($1,$2,$3,$4,$5)
+        from_number, to_dsl_number, raw_sms, error_reason
+      ) VALUES ($1,$2,$3,$4)
     `;
     await client.query(query, [
       data.fromNumber || "unknown",
       data.toDslNumber || "unknown",
-      data.encrypted || "unknown",
       data.rawSms || "unknown",
       data.reason || "unknown"
     ]);
@@ -181,7 +180,6 @@ functions.http('decryptSMS', async (req, res) => {
     await saveFailedDecryptToDb({
       fromNumber,
       toDslNumber,
-      encrypted: (typeof parsed !== "undefined" && parsed.encrypted) ? parsed.encrypted : rawSms || "unknown",
       rawSms,
       reason: err.message || "unknown"
     });
