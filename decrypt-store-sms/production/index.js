@@ -14,11 +14,13 @@ const pool = new Pool({
   ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
 });
 
+// Generate AES key from root AUDIT_SMS_KEY
 function deriveAesKeyFromAuditSmsKey(auditSmsKey) {
   const hmac = crypto.createHmac('sha256', Buffer.from(auditSmsKey, 'utf8'));
   return hmac.digest();
 }
 
+// Attempt AES-GCM decryption of the encrypted payload
 function decryptAesGcm(base64Input, keyBytes) {
   let combined;
   try { combined = Buffer.from(base64Input, 'base64'); } 
@@ -39,6 +41,7 @@ function decryptAesGcm(base64Input, keyBytes) {
   } catch (err) { console.error('AES-GCM auth/tag failure:', err.message); return null; }
 }
 
+// Save raw SMS into failed decrypt table
 async function saveFailedDecryptToDb(data) {
   const client = await pool.connect();
   try {
@@ -57,6 +60,7 @@ async function saveFailedDecryptToDb(data) {
   finally { client.release(); }
 }
 
+// Parse DS:encrypted payload from raw SMS
 function parseDsSms(rawSms, auditSmsKey) {
   if (!rawSms) throw new Error("Empty SMS content");
   const idx = rawSms.indexOf(":");
@@ -86,6 +90,7 @@ function parseDsSms(rawSms, auditSmsKey) {
   });
 }
 
+// Build the parsed output object
 function buildParsedResult({ groupId, meetingId, versionRaw, timestampRaw, decryptedString, encryptedPayloadRaw, wasEncrypted }) {
   const versionString = convertVersionIntToDotted(versionRaw) || "unknown";
   const meetingTime = (timestampRaw && !isNaN(Number(timestampRaw))) ? Number(timestampRaw) : 0;
@@ -101,15 +106,16 @@ function buildParsedResult({ groupId, meetingId, versionRaw, timestampRaw, decry
   };
 }
 
+// Convert integer app version to dotted notation
 function convertVersionIntToDotted(v) {
   if (v === null || v === undefined) return "unknown";
   const s = String(v).trim();
-  if (!/^\d+$/.test(s)) return s;
   if (s.length === 3) return `${s[0]}.${s[1]}.${s[2]}`;
   if (s.length === 4) return `${s[0]}.${s.slice(1, 3)}.${s[3]}`;
   return s;
 }
 
+// Save decrypted SMS into main sms_meeting_log table
 async function saveMessageToDb({ groupId, meetingId, meetingTime, version, encrypted, decrypted, raw, country, fromNumber, toDslNumber }) {
   const client = await pool.connect();
   try {
@@ -162,6 +168,8 @@ functions.http('decryptSMS', async (req, res) => {
       toDslNumber
     });
 
+    console.log(`[SUCCESS] DSL SMS decrypted | meetingId=${parsed.meetingId} | groupId=${parsed.groupId}`);
+
     return res.status(200).json({
       status: 'ok',
       group: parsed.groupId,
@@ -169,6 +177,8 @@ functions.http('decryptSMS', async (req, res) => {
       decryptedMessage: parsed.decrypted
     });
   } catch (err) {
+    console.log(`[FAILED] DSL SMS decrypt failed | from=${fromNumber} | err=${err.message}`);
+
     await saveFailedDecryptToDb({
       fromNumber,
       toDslNumber,
@@ -176,7 +186,7 @@ functions.http('decryptSMS', async (req, res) => {
       reason: err.message || "unknown"
     });
 
-    // Telerivet will repeatedly call the webhook until 200 received
+    // Telerivet will repeatedly call the webhook until any 2xx status received
     // Therefore responding with any other code will cause duplicate failed decryption entries to be formed in DB
     return res.status(201).json({
       status: 'failed',
@@ -185,6 +195,7 @@ functions.http('decryptSMS', async (req, res) => {
   }
 });
 
+// For unit tests
 module.exports = {
   deriveAesKeyFromAuditSmsKey,
   decryptAesGcm,
